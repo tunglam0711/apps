@@ -315,6 +315,25 @@
 
         // --- Utility Functions ---
         
+        function showError(message) {
+            let container = document.getElementById('error-toast');
+            if (!container) {
+                container = document.createElement('div');
+                container.id = 'error-toast';
+                container.className = 'fixed top-4 right-4 z-[100] max-w-sm w-full bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded shadow-lg transition-all duration-300';
+                document.body.appendChild(container);
+            }
+            container.innerHTML = `
+                <strong class="font-bold flex items-center gap-2"><i class="fas fa-exclamation-triangle"></i> Error</strong>
+                <span class="block text-sm mt-1">${message}</span>
+                <span class="absolute top-2 right-2 px-2 py-1 cursor-pointer text-red-500 hover:text-red-800" onclick="this.parentElement.style.display='none'">
+                    <i class="fas fa-times"></i>
+                </span>
+            `;
+            container.style.display = 'block';
+            setTimeout(() => { if (container) container.style.display = 'none'; }, 8000);
+        }
+
         // Generate unique ID
         const generateId = () => Math.random().toString(36).substr(2, 9);
         
@@ -332,25 +351,36 @@
 
         // --- STREAMING_CHUNK:Firebase Integration ---
 
-        async function initAuth() {
-            const useLocalFallback = (statusText = "Local Mode (No Cloud)") => {
-                document.getElementById('authStatus').innerHTML = `<i class="fas fa-exclamation-triangle text-yellow-500"></i> ${statusText}`;
-                classes = JSON.parse(localStorage.getItem('teacherClasses')) || [];
-                renderClassList();
-                renderCalendar();
-            };
+        function useLocalFallback(statusText = "Local Mode", errorMsg = "") {
+            document.getElementById('authStatus').innerHTML = `<i class="fas fa-exclamation-triangle text-yellow-500"></i> ${statusText}`;
+            
+            const header = document.querySelector('header');
+            if (errorMsg && !document.getElementById('firebase-warning')) {
+                const warningDiv = document.createElement('div');
+                warningDiv.id = 'firebase-warning';
+                warningDiv.className = 'mt-4 p-4 bg-yellow-50 text-yellow-800 border border-yellow-200 rounded-lg text-sm flex items-start gap-3 text-left shadow-sm';
+                warningDiv.innerHTML = `<i class="fas fa-info-circle mt-0.5 text-yellow-500 text-lg"></i> <div><strong class="block mb-1">Cloud Sync is disabled</strong> ${errorMsg} <br><span class="opacity-80 mt-1 block">The app is safely running in Local Mode. Your data is being saved to this browser.</span></div>`;
+                header.appendChild(warningDiv);
+            }
+            
+            // Disable DB interactions to prevent further errors
+            db = null; 
+            userId = null;
+            
+            classes = JSON.parse(localStorage.getItem('teacherClasses')) || [];
+            renderClassList();
+            renderCalendar();
+        }
 
+        async function initAuth() {
             if (!auth) {
-                useLocalFallback();
+                useLocalFallback("Local Mode (No Cloud)");
                 return;
             }
 
             try {
-                // Since you are using a custom Firebase config, we use Anonymous Auth.
-                // Note: You MUST enable "Anonymous" sign-in in your Firebase Console (Authentication section)
                 await signInAnonymously(auth);
             } catch (error) {
-                // Changed from console.error to console.warn to prevent sandbox error triggers
                 console.warn("Firebase Auth not configured yet. Switching to local mode. Error code:", error.code);
                 
                 let errorMsg = "Could not connect to Firebase.";
@@ -358,19 +388,7 @@
                     errorMsg = "Firebase Setup Required: Please go to Firebase Console > Authentication > Sign-in method > Enable 'Anonymous'.";
                 }
                 
-                // Show a helpful warning message on the screen
-                const header = document.querySelector('header');
-                // Check if warning already exists to prevent duplicates
-                if (!document.getElementById('firebase-warning')) {
-                    const warningDiv = document.createElement('div');
-                    warningDiv.id = 'firebase-warning';
-                    warningDiv.className = 'mt-4 p-4 bg-yellow-50 text-yellow-800 border border-yellow-200 rounded-lg text-sm flex items-start gap-3 text-left shadow-sm';
-                    warningDiv.innerHTML = `<i class="fas fa-info-circle mt-0.5 text-yellow-500 text-lg"></i> <div><strong class="block mb-1">Cloud Sync is currently disabled</strong> ${errorMsg} <br><span class="opacity-80 mt-1 block">The app is safely running in Local Mode. Your data is being saved to this browser.</span></div>`;
-                    header.appendChild(warningDiv);
-                }
-
-                // Fallback to local browser storage
-                useLocalFallback("Local Mode");
+                useLocalFallback("Local Mode", errorMsg);
                 return;
             }
 
@@ -402,7 +420,12 @@
                 renderClassList();
                 renderCalendar(); 
             }, (error) => {
-                console.error("Error listening to classes: ", error);
+                console.warn("Firestore listen error: ", error.code);
+                if (error.code === 'permission-denied') {
+                    useLocalFallback("Local Mode", "Firebase is blocking access. Please go to Firebase Console > Firestore > Rules, and update them to allow read/write access.");
+                } else {
+                    useLocalFallback("Local Mode", "Database connection error.");
+                }
             });
         }
 
@@ -413,6 +436,12 @@
                     await setDoc(docRef, clsData);
                 } catch (error) {
                     console.error("Error saving class to Firebase:", error);
+                    if (error.code === 'permission-denied') {
+                        showError("<b>Permission Denied!</b><br>Cannot save to Firebase. Please check your Firestore Security Rules in the Firebase Console.");
+                    } else {
+                        showError("Failed to save class: " + error.message);
+                    }
+                    throw error;
                 }
             } else {
                 // Local fallback
@@ -435,6 +464,12 @@
                     await deleteDoc(docRef);
                 } catch (error) {
                     console.error("Error deleting class from Firebase:", error);
+                    if (error.code === 'permission-denied') {
+                        showError("<b>Permission Denied!</b><br>Cannot delete. Please update your Firestore Security Rules.");
+                    } else {
+                        showError("Failed to delete class: " + error.message);
+                    }
+                    throw error;
                 }
             } else {
                 // Local fallback
@@ -761,7 +796,7 @@
                             }
                         }
                         
-                        await saveClass(cls);
+                        try { await saveClass(cls); } catch (e) {}
                     });
 
                     removeAbsenceBtn.addEventListener('click', async () => {
@@ -773,7 +808,7 @@
                             if (cls.absences[existingAbsenceIndex].count <= 0) {
                                 cls.absences.splice(existingAbsenceIndex, 1);
                             }
-                            await saveClass(cls);
+                            try { await saveClass(cls); } catch (e) {}
                         }
                     });
 
@@ -867,49 +902,53 @@
                 return;
             }
 
-            if (editingClassId) {
-                // Update existing
-                const existingClass = classes.find(c => c.id === editingClassId);
-                const updatedClass = { 
-                    ...existingClass,
-                    name, 
-                    students, 
-                    fee, 
-                    schedule 
-                };
+            try {
+                if (editingClassId) {
+                    // Update existing
+                    const existingClass = classes.find(c => c.id === editingClassId);
+                    const updatedClass = { 
+                        ...existingClass,
+                        name, 
+                        students, 
+                        fee, 
+                        schedule 
+                    };
+                    
+                    await saveClass(updatedClass);
+                    editingClassId = null;
+                    
+                    // Reset submit button
+                    const submitBtn = classForm.querySelector('button[type="submit"]');
+                    submitBtn.innerHTML = '<i class="fas fa-save"></i> Save Class';
+                    submitBtn.classList.remove('bg-green-600', 'hover:bg-green-700');
+                    submitBtn.classList.add('bg-blue-600', 'hover:bg-blue-700');
+                } else {
+                    // Add new
+                    const newClass = {
+                        id: generateId(),
+                        name,
+                        students,
+                        fee,
+                        schedule,
+                        absences: [],
+                        makeups: []
+                    };
+                    await saveClass(newClass);
+                }
                 
-                await saveClass(updatedClass);
-                editingClassId = null;
+                // Reset form ONLY on success
+                classForm.reset();
+                dayButtons.forEach(btn => {
+                    btn.classList.remove('bg-blue-500', 'text-white', 'border-blue-500');
+                    btn.classList.add('border-gray-300');
+                    btn.dataset.selected = 'false';
+                });
                 
-                // Reset submit button
-                const submitBtn = classForm.querySelector('button[type="submit"]');
-                submitBtn.innerHTML = '<i class="fas fa-save"></i> Save Class';
-                submitBtn.classList.remove('bg-green-600', 'hover:bg-green-700');
-                submitBtn.classList.add('bg-blue-600', 'hover:bg-blue-700');
-            } else {
-                // Add new
-                const newClass = {
-                    id: generateId(),
-                    name,
-                    students,
-                    fee,
-                    schedule,
-                    absences: [],
-                    makeups: []
-                };
-                await saveClass(newClass);
+                renderClassList();
+                renderCalendar(); // Update dots on calendar
+            } catch (err) {
+                console.warn("Class save halted.");
             }
-            
-            // Reset form
-            classForm.reset();
-            dayButtons.forEach(btn => {
-                btn.classList.remove('bg-blue-500', 'text-white', 'border-blue-500');
-                btn.classList.add('border-gray-300');
-                btn.dataset.selected = 'false';
-            });
-            
-            renderClassList();
-            renderCalendar(); // Update dots on calendar
         });
 
         // Make-up Form Submit
@@ -931,11 +970,15 @@
                     cls.makeups.push({ year, month, count });
                 }
                 
-                await saveClass(cls);
+                try {
+                    await saveClass(cls);
+                    makeupModal.classList.remove('active');
+                    makeupForm.reset();
+                } catch (err) {
+                    console.warn("Makeup class save halted.");
+                }
             }
             
-            makeupModal.classList.remove('active');
-            makeupForm.reset();
         });
 
         // Modal Close logic
