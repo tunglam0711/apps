@@ -1,0 +1,978 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Teacher Salary Calculator</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" integrity="sha512-9usAa10IRO0HhonpyAIVpjrylPvoDwiPUiKdWk5t3PyolY1cOd4DSE0Ga+ri4AuTroPR5aQvXU9xC6qOPnzFeg==" crossorigin="anonymous" referrerpolicy="no-referrer" />
+    <style>
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: #f3f4f6;
+            color: #1f2937;
+        }
+        .calendar-grid {
+            display: grid;
+            grid-template-columns: repeat(7, 1fr);
+            gap: 4px;
+        }
+        .calendar-day {
+            aspect-ratio: 1;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            border-radius: 9999px;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+        .calendar-day:hover {
+            background-color: #e5e7eb;
+        }
+        .calendar-day.selected {
+            background-color: #3b82f6;
+            color: white;
+        }
+        .calendar-day.disabled {
+            color: #9ca3af;
+            cursor: not-allowed;
+        }
+        .calendar-day.disabled:hover {
+            background-color: transparent;
+        }
+        
+        /* Custom scrollbar for class list */
+        .class-list-container::-webkit-scrollbar {
+            width: 8px;
+        }
+        .class-list-container::-webkit-scrollbar-track {
+            background: #f1f1f1; 
+            border-radius: 4px;
+        }
+        .class-list-container::-webkit-scrollbar-thumb {
+            background: #cbd5e1; 
+            border-radius: 4px;
+        }
+        .class-list-container::-webkit-scrollbar-thumb:hover {
+            background: #94a3b8; 
+        }
+
+        /* Modal Styles */
+        .modal {
+            display: none;
+            position: fixed;
+            inset: 0;
+            background-color: rgba(0, 0, 0, 0.5);
+            z-index: 50;
+            align-items: center;
+            justify-content: center;
+        }
+        .modal.active {
+            display: flex;
+        }
+    </style>
+</head>
+<body class="min-h-screen p-4 md:p-8">
+
+    <div class="max-w-6xl mx-auto">
+        <header class="mb-8 text-center md:text-left">
+            <h1 class="text-3xl font-bold text-gray-800 flex items-center justify-center md:justify-start gap-3">
+                <i class="fas fa-chalkboard-teacher text-blue-600"></i>
+                Teacher Salary Calculator
+            </h1>
+            <div class="flex flex-col md:flex-row items-center justify-between mt-2">
+                <p class="text-gray-600">Manage your classes, track schedules, and calculate monthly earnings.</p>
+                <div id="authStatus" class="mt-2 md:mt-0 text-sm font-medium px-3 py-1 bg-gray-200 text-gray-700 rounded-full flex items-center gap-2">
+                    <i class="fas fa-circle-notch fa-spin text-gray-500"></i> Connecting...
+                </div>
+            </div>
+        </header>
+
+        <div class="grid grid-cols-1 lg:grid-cols-12 gap-6">
+            
+            <!-- Left Column: Form & Calendar -->
+            <div class="lg:col-span-5 flex flex-col gap-6">
+                
+                <div class="bg-white rounded-xl shadow-md p-6 border border-gray-100">
+                    <h2 class="text-xl font-semibold mb-4 border-b pb-2 flex items-center gap-2">
+                        <i class="fas fa-plus-circle text-green-500"></i> Add New Class
+                    </h2>
+                    
+                    <form id="classForm" class="space-y-4">
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700 mb-1">Class Name</label>
+                            <input type="text" id="className" required class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none transition" placeholder="e.g., Math 101">
+                        </div>
+                        
+                        <div class="grid grid-cols-2 gap-4">
+                            <div>
+                                <label class="block text-sm font-medium text-gray-700 mb-1">Number of Students</label>
+                                <input type="number" id="studentCount" min="1" required class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none transition" placeholder="e.g., 20">
+                            </div>
+                            <div>
+                                <label class="block text-sm font-medium text-gray-700 mb-1">Fee/Student (VND)</label>
+                                <input type="number" id="feePerSession" min="0" step="1000" required class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none transition" placeholder="e.g., 150000">
+                            </div>
+                        </div>
+
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700 mb-2">Schedule (Select Days)</label>
+                            <div class="flex flex-wrap gap-2" id="daySelector">
+                                <!-- Days will be populated here -->
+                                <button type="button" class="day-btn px-3 py-1 rounded-full border border-gray-300 text-sm hover:bg-blue-50 transition" data-day="0">Sun</button>
+                                <button type="button" class="day-btn px-3 py-1 rounded-full border border-gray-300 text-sm hover:bg-blue-50 transition" data-day="1">Mon</button>
+                                <button type="button" class="day-btn px-3 py-1 rounded-full border border-gray-300 text-sm hover:bg-blue-50 transition" data-day="2">Tue</button>
+                                <button type="button" class="day-btn px-3 py-1 rounded-full border border-gray-300 text-sm hover:bg-blue-50 transition" data-day="3">Wed</button>
+                                <button type="button" class="day-btn px-3 py-1 rounded-full border border-gray-300 text-sm hover:bg-blue-50 transition" data-day="4">Thu</button>
+                                <button type="button" class="day-btn px-3 py-1 rounded-full border border-gray-300 text-sm hover:bg-blue-50 transition" data-day="5">Fri</button>
+                                <button type="button" class="day-btn px-3 py-1 rounded-full border border-gray-300 text-sm hover:bg-blue-50 transition" data-day="6">Sat</button>
+                            </div>
+                            <p id="scheduleError" class="text-red-500 text-xs mt-1 hidden">Please select at least one day.</p>
+                        </div>
+
+                        <button type="submit" class="w-full bg-blue-600 hover:bg-blue-700 text-white font-medium py-2 px-4 rounded-lg transition duration-200 flex items-center justify-center gap-2">
+                            <i class="fas fa-save"></i> Save Class
+                        </button>
+                    </form>
+                </div>
+
+                <div class="bg-white rounded-xl shadow-md p-6 border border-gray-100">
+                    <h2 class="text-xl font-semibold mb-4 border-b pb-2 flex items-center gap-2">
+                        <i class="far fa-calendar-alt text-purple-500"></i> Calculation Month
+                    </h2>
+                    
+                    <div class="flex items-center justify-between mb-4">
+                        <button id="prevMonth" class="p-2 rounded-full hover:bg-gray-100 transition">
+                            <i class="fas fa-chevron-left text-gray-600"></i>
+                        </button>
+                        <h3 id="currentMonthDisplay" class="font-bold text-lg select-none">Month Year</h3>
+                        <button id="nextMonth" class="p-2 rounded-full hover:bg-gray-100 transition">
+                            <i class="fas fa-chevron-right text-gray-600"></i>
+                        </button>
+                    </div>
+
+                    <!-- Year Selector for quick jump up to 2040 -->
+                    <div class="mb-4">
+                        <select id="yearSelector" class="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
+                            <!-- Years populated by JS -->
+                        </select>
+                    </div>
+
+                    <div class="calendar-grid mb-2 text-center text-xs font-semibold text-gray-500">
+                        <div>Su</div><div>Mo</div><div>Tu</div><div>We</div><div>Th</div><div>Fr</div><div>Sa</div>
+                    </div>
+                    <div id="calendarDays" class="calendar-grid text-sm">
+                        <!-- Calendar days populated by JS -->
+                    </div>
+                    
+                    <div class="mt-4 text-sm text-gray-600 text-center">
+                        Selected: <span id="selectedMonthText" class="font-semibold text-blue-600"></span>
+                    </div>
+                </div>
+
+            </div>
+
+            <!-- Right Column: Class List & Summary -->
+            <div class="lg:col-span-7 flex flex-col gap-6">
+                
+                <div class="bg-gradient-to-br from-blue-600 to-indigo-700 rounded-xl shadow-lg p-6 text-white">
+                    <h2 class="text-xl font-semibold mb-2 opacity-90 flex items-center gap-2">
+                        <i class="fas fa-coins text-yellow-300"></i> Monthly Summary
+                    </h2>
+                    <p class="text-blue-100 text-sm mb-4">For <span id="summaryMonthLabel" class="font-bold border-b border-blue-300 border-dashed pb-0.5"></span></p>
+                    
+                    <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+                        <div class="bg-white/10 rounded-lg p-4 backdrop-blur-sm">
+                            <div class="text-blue-100 text-xs uppercase tracking-wider mb-1">Total Classes</div>
+                            <div class="text-3xl font-bold" id="totalClassesCount">0</div>
+                        </div>
+                        <div class="bg-white/10 rounded-lg p-4 backdrop-blur-sm">
+                            <div class="text-blue-100 text-xs uppercase tracking-wider mb-1">Total Students</div>
+                            <div class="text-3xl font-bold" id="totalStudentsCount">0</div>
+                        </div>
+                        <div class="bg-white/20 rounded-lg p-4 backdrop-blur-sm border border-white/30">
+                            <div class="text-blue-100 text-xs uppercase tracking-wider mb-1">Total Earnings</div>
+                            <div class="text-3xl font-bold text-yellow-300" id="totalEarningsAmount">0 ₫</div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="bg-white rounded-xl shadow-md p-0 border border-gray-100 flex-grow flex flex-col overflow-hidden">
+                    <div class="p-6 border-b border-gray-100 flex justify-between items-center">
+                        <h2 class="text-xl font-semibold flex items-center gap-2">
+                            <i class="fas fa-list-ul text-blue-500"></i> My Classes
+                        </h2>
+                        <button id="clearAllBtn" class="text-sm text-red-500 hover:text-red-700 hover:underline px-2 py-1 transition hidden">
+                            Clear All
+                        </button>
+                    </div>
+                    
+                    <div id="classList" class="class-list-container p-6 overflow-y-auto max-h-[500px] flex-grow space-y-4">
+                        <!-- Classes will be injected here -->
+                        <div id="emptyState" class="text-center py-12 text-gray-400">
+                            <i class="fas fa-folder-open text-4xl mb-3 opacity-50"></i>
+                            <p>No classes added yet.</p>
+                            <p class="text-sm mt-1">Use the form to add a class.</p>
+                        </div>
+                    </div>
+                </div>
+
+            </div>
+        </div>
+    </div>
+
+    <!-- Make-up Class Modal -->
+    <div id="makeupModal" class="modal">
+        <div class="bg-white rounded-xl shadow-xl w-full max-w-md mx-4 overflow-hidden transform transition-all">
+            <div class="px-6 py-4 border-b border-gray-100 flex justify-between items-center bg-gray-50">
+                <h3 class="text-lg font-semibold text-gray-800"><i class="fas fa-plus-circle text-green-500 mr-2"></i>Add Make-up Class</h3>
+                <button type="button" class="close-modal text-gray-400 hover:text-gray-600 focus:outline-none">
+                    <i class="fas fa-times"></i>
+                </button>
+            </div>
+            <div class="p-6">
+                <p class="text-sm text-gray-600 mb-4">Record a student making up a class from a previous absence. This will add the fee for one student back into this month's earnings for <span id="makeupClassName" class="font-bold"></span>.</p>
+                <form id="makeupForm" class="space-y-4">
+                    <input type="hidden" id="makeupClassId">
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 mb-1">Number of Make-up Students</label>
+                        <input type="number" id="makeupCount" min="1" value="1" required class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-green-500 outline-none transition">
+                    </div>
+                    <div class="pt-2 flex justify-end gap-3">
+                        <button type="button" class="close-modal px-4 py-2 text-gray-600 hover:bg-gray-100 rounded-lg transition">Cancel</button>
+                        <button type="submit" class="px-4 py-2 bg-green-600 hover:bg-green-700 text-white font-medium rounded-lg transition">Add Make-up</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+
+    <script type="module">
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
+        import { getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+        import { getFirestore, doc, setDoc, getDoc, collection, onSnapshot, deleteDoc } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+
+        // --- Firebase Setup ---
+        const appId = typeof __app_id !== 'undefined' ? __app_id : 'teacher-salary-calc-default';
+        
+        const firebaseConfig = {
+            apiKey: "AIzaSyCr0mXQhAJof7UOZCzft8Ij0xg95BiGJWs",
+            authDomain: "salary-28b0a.firebaseapp.com",
+            projectId: "salary-28b0a",
+            storageBucket: "salary-28b0a.firebasestorage.app",
+            messagingSenderId: "1093180479960",
+            appId: "1:1093180479960:web:183c7713666d961f7ebaad",
+            measurementId: "G-2XMBGZEG5Q"
+        };
+        
+        let app, db, auth;
+        let userId = null;
+        let unsubscribeClasses = null;
+
+        if (Object.keys(firebaseConfig).length > 0) {
+            app = initializeApp(firebaseConfig);
+            db = getFirestore(app);
+            auth = getAuth(app);
+        }
+
+        // --- State Management ---
+        let classes = []; // Now populated from Firebase
+        
+        let currentDate = new Date();
+        let selectedDate = new Date(currentDate.getFullYear(), currentDate.getMonth(), 1); // Default to current month
+        let editingClassId = null;
+
+        // --- DOM Elements ---
+        const classForm = document.getElementById('classForm');
+        const dayButtons = document.querySelectorAll('.day-btn');
+        const scheduleError = document.getElementById('scheduleError');
+        const classList = document.getElementById('classList');
+        const emptyState = document.getElementById('emptyState');
+        const clearAllBtn = document.getElementById('clearAllBtn');
+        
+        // Calendar Elements
+        const currentMonthDisplay = document.getElementById('currentMonthDisplay');
+        const prevMonthBtn = document.getElementById('prevMonth');
+        const nextMonthBtn = document.getElementById('nextMonth');
+        const calendarDays = document.getElementById('calendarDays');
+        const yearSelector = document.getElementById('yearSelector');
+        const selectedMonthText = document.getElementById('selectedMonthText');
+        const summaryMonthLabel = document.getElementById('summaryMonthLabel');
+
+        // Modal Elements
+        const makeupModal = document.getElementById('makeupModal');
+        const makeupForm = document.getElementById('makeupForm');
+        const makeupClassName = document.getElementById('makeupClassName');
+        const makeupClassIdInput = document.getElementById('makeupClassId');
+        const makeupCountInput = document.getElementById('makeupCount');
+        const closeModals = document.querySelectorAll('.close-modal');
+
+        // Summary Elements
+        const totalClassesCount = document.getElementById('totalClassesCount');
+        const totalStudentsCount = document.getElementById('totalStudentsCount');
+        const totalEarningsAmount = document.getElementById('totalEarningsAmount');
+
+        // --- Utility Functions ---
+        
+        // Generate unique ID
+        const generateId = () => Math.random().toString(36).substr(2, 9);
+        
+        // Format currency
+        const formatCurrency = (amount) => {
+            return new Intl.NumberFormat('vi-VN', { style: 'currency', currency: 'VND' }).format(amount);
+        };
+        
+        // Month names
+        const monthNames = ["January", "February", "March", "April", "May", "June",
+          "July", "August", "September", "October", "November", "December"
+        ];
+        
+        const dayNames = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+
+        // --- STREAMING_CHUNK:Firebase Integration ---
+
+        async function initAuth() {
+            const useLocalFallback = (statusText = "Local Mode (No Cloud)") => {
+                document.getElementById('authStatus').innerHTML = `<i class="fas fa-exclamation-triangle text-yellow-500"></i> ${statusText}`;
+                classes = JSON.parse(localStorage.getItem('teacherClasses')) || [];
+                renderClassList();
+                renderCalendar();
+            };
+
+            if (!auth) {
+                useLocalFallback();
+                return;
+            }
+
+            try {
+                // Since you are using a custom Firebase config, we use Anonymous Auth.
+                // Note: You MUST enable "Anonymous" sign-in in your Firebase Console (Authentication section)
+                await signInAnonymously(auth);
+            } catch (error) {
+                // Changed from console.error to console.warn to prevent sandbox error triggers
+                console.warn("Firebase Auth not configured yet. Switching to local mode. Error code:", error.code);
+                
+                let errorMsg = "Could not connect to Firebase.";
+                if (error.code === 'auth/configuration-not-found' || error.code === 'auth/admin-restricted-operation') {
+                    errorMsg = "Firebase Setup Required: Please go to Firebase Console > Authentication > Sign-in method > Enable 'Anonymous'.";
+                }
+                
+                // Show a helpful warning message on the screen
+                const header = document.querySelector('header');
+                // Check if warning already exists to prevent duplicates
+                if (!document.getElementById('firebase-warning')) {
+                    const warningDiv = document.createElement('div');
+                    warningDiv.id = 'firebase-warning';
+                    warningDiv.className = 'mt-4 p-4 bg-yellow-50 text-yellow-800 border border-yellow-200 rounded-lg text-sm flex items-start gap-3 text-left shadow-sm';
+                    warningDiv.innerHTML = `<i class="fas fa-info-circle mt-0.5 text-yellow-500 text-lg"></i> <div><strong class="block mb-1">Cloud Sync is currently disabled</strong> ${errorMsg} <br><span class="opacity-80 mt-1 block">The app is safely running in Local Mode. Your data is being saved to this browser.</span></div>`;
+                    header.appendChild(warningDiv);
+                }
+
+                // Fallback to local browser storage
+                useLocalFallback("Local Mode");
+                return;
+            }
+
+            onAuthStateChanged(auth, (user) => {
+                if (user) {
+                    userId = user.uid;
+                    document.getElementById('authStatus').innerHTML = `<i class="fas fa-cloud text-blue-500"></i> Saved to Cloud`;
+                    setupRealtimeListener();
+                } else {
+                    userId = null;
+                }
+            });
+        }
+
+        function setupRealtimeListener() {
+            if (!db || !userId) return;
+
+            if (unsubscribeClasses) {
+                unsubscribeClasses();
+            }
+
+            const classesRef = collection(db, 'artifacts', appId, 'users', userId, 'classes');
+            
+            unsubscribeClasses = onSnapshot(classesRef, (snapshot) => {
+                classes = [];
+                snapshot.forEach((doc) => {
+                    classes.push({ id: doc.id, ...doc.data() });
+                });
+                renderClassList();
+                renderCalendar(); 
+            }, (error) => {
+                console.error("Error listening to classes: ", error);
+            });
+        }
+
+        async function saveClass(clsData) {
+            if (db && userId) {
+                try {
+                    const docRef = doc(db, 'artifacts', appId, 'users', userId, 'classes', clsData.id);
+                    await setDoc(docRef, clsData);
+                } catch (error) {
+                    console.error("Error saving class to Firebase:", error);
+                }
+            } else {
+                // Local fallback
+                const index = classes.findIndex(c => c.id === clsData.id);
+                if (index !== -1) {
+                    classes[index] = clsData;
+                } else {
+                    classes.push(clsData);
+                }
+                localStorage.setItem('teacherClasses', JSON.stringify(classes));
+                renderClassList();
+                renderCalendar();
+            }
+        }
+
+        async function deleteClass(classId) {
+            if (db && userId) {
+                try {
+                    const docRef = doc(db, 'artifacts', appId, 'users', userId, 'classes', classId);
+                    await deleteDoc(docRef);
+                } catch (error) {
+                    console.error("Error deleting class from Firebase:", error);
+                }
+            } else {
+                // Local fallback
+                classes = classes.filter(c => c.id !== classId);
+                localStorage.setItem('teacherClasses', JSON.stringify(classes));
+                renderClassList();
+                renderCalendar();
+            }
+        }
+
+
+        // --- STREAMING_CHUNK:Calendar Logic ---
+
+        function initCalendar() {
+            // Populate year selector (Current year up to 2040)
+            const currentYear = new Date().getFullYear();
+            const maxYear = 2040;
+            
+            // Allow going back a few years too
+            for (let y = currentYear - 5; y <= maxYear; y++) {
+                const option = document.createElement('option');
+                option.value = y;
+                option.textContent = y;
+                if (y === selectedDate.getFullYear()) option.selected = true;
+                yearSelector.appendChild(option);
+            }
+
+            yearSelector.addEventListener('change', (e) => {
+                selectedDate.setFullYear(parseInt(e.target.value));
+                renderCalendar();
+                updateCalculations();
+            });
+
+            prevMonthBtn.addEventListener('click', () => {
+                selectedDate.setMonth(selectedDate.getMonth() - 1);
+                yearSelector.value = selectedDate.getFullYear();
+                renderCalendar();
+                updateCalculations();
+            });
+
+            nextMonthBtn.addEventListener('click', () => {
+                selectedDate.setMonth(selectedDate.getMonth() + 1);
+                yearSelector.value = selectedDate.getFullYear();
+                renderCalendar();
+                updateCalculations();
+            });
+
+            renderCalendar();
+        }
+
+        function renderCalendar() {
+            const year = selectedDate.getFullYear();
+            const month = selectedDate.getMonth();
+            
+            currentMonthDisplay.textContent = `${monthNames[month]} ${year}`;
+            
+            const monthLabel = `${monthNames[month]} ${year}`;
+            selectedMonthText.textContent = monthLabel;
+            summaryMonthLabel.textContent = monthLabel;
+
+            calendarDays.innerHTML = '';
+
+            const firstDay = new Date(year, month, 1).getDay();
+            const daysInMonth = new Date(year, month + 1, 0).getDate();
+            const daysInPrevMonth = new Date(year, month, 0).getDate();
+
+            // Previous month days (padding)
+            for (let i = 0; i < firstDay; i++) {
+                const dayEl = document.createElement('div');
+                dayEl.classList.add('calendar-day', 'disabled');
+                dayEl.textContent = daysInPrevMonth - firstDay + i + 1;
+                calendarDays.appendChild(dayEl);
+            }
+
+            // Current month days
+            const today = new Date();
+            for (let i = 1; i <= daysInMonth; i++) {
+                const dayEl = document.createElement('div');
+                dayEl.classList.add('calendar-day');
+                
+                // Highlight today if in current view
+                if (year === today.getFullYear() && month === today.getMonth() && i === today.getDate()) {
+                    dayEl.classList.add('bg-blue-100', 'font-bold', 'text-blue-700');
+                }
+                
+                // Add tiny indicator if there are classes on this day of week
+                const currentDayOfWeek = new Date(year, month, i).getDay();
+                const hasClasses = classes.some(c => c.schedule.includes(currentDayOfWeek));
+                
+                if (hasClasses) {
+                    dayEl.innerHTML = `${i} <span class="absolute bottom-1 w-1 h-1 bg-blue-500 rounded-full"></span>`;
+                    dayEl.classList.add('relative');
+                } else {
+                    dayEl.textContent = i;
+                }
+
+                // Make interactive to show daily details (feature for later, for now just visually highlight)
+                dayEl.addEventListener('click', () => {
+                    document.querySelectorAll('.calendar-day').forEach(el => el.classList.remove('ring-2', 'ring-blue-500'));
+                    dayEl.classList.add('ring-2', 'ring-blue-500');
+                });
+
+                calendarDays.appendChild(dayEl);
+            }
+
+            // Next month days (padding)
+            const totalCells = firstDay + daysInMonth;
+            const remainingCells = Math.ceil(totalCells / 7) * 7 - totalCells;
+            for (let i = 1; i <= remainingCells; i++) {
+                const dayEl = document.createElement('div');
+                dayEl.classList.add('calendar-day', 'disabled');
+                dayEl.textContent = i;
+                calendarDays.appendChild(dayEl);
+            }
+        }
+
+        // --- STREAMING_CHUNK:Calculation Logic ---
+
+        // Count how many specific days (e.g., Mondays) occur in a given month and year
+        function countDaysInMonth(year, month, dayOfWeek) {
+            let count = 0;
+            let date = new Date(year, month, 1);
+            
+            // Move to the first occurrence of the target day
+            while (date.getDay() !== dayOfWeek) {
+                date.setDate(date.getDate() + 1);
+            }
+            
+            // Count all occurrences in the month
+            while (date.getMonth() === month) {
+                count++;
+                date.setDate(date.getDate() + 7);
+            }
+            return count;
+        }
+
+        // Calculate sessions and fees for a specific class in the selected month
+        function calculateClassEarnings(cls, year, month) {
+            let totalSessions = 0;
+            
+            // For each day in the schedule, count how many times it happens this month
+            cls.schedule.forEach(dayIndex => {
+                totalSessions += countDaysInMonth(year, month, dayIndex);
+            });
+            
+            // Calculate absences for this class in this month
+            const classAbsences = (cls.absences || []).filter(a => a.year === year && a.month === month);
+            const totalAbsentStudents = classAbsences.reduce((sum, a) => sum + a.count, 0);
+
+            // Calculate make-up classes for this month
+            const makeups = (cls.makeups || []).filter(m => m.year === year && m.month === month);
+            const totalMakeupStudents = makeups.reduce((sum, m) => sum + m.count, 0);
+
+            // Total fee = (Fee per student per session) * (number of students * total sessions - absences + makeups)
+            const totalExpectedStudentSessions = cls.students * totalSessions;
+            const actualStudentSessions = Math.max(0, totalExpectedStudentSessions - totalAbsentStudents);
+            
+            // Earnings logic: Add makeup fees to the actual sessions calculated
+            const totalMonthlyEarnings = cls.fee * (actualStudentSessions + totalMakeupStudents);
+            
+            return {
+                sessions: totalSessions,
+                earnings: totalMonthlyEarnings,
+                absences: totalAbsentStudents,
+                makeups: totalMakeupStudents
+            };
+        }
+
+        // --- STREAMING_CHUNK:UI Update and Form Handling ---
+
+        function updateCalculations() {
+            const year = selectedDate.getFullYear();
+            const month = selectedDate.getMonth();
+            
+            let totalStudents = 0;
+            let totalEarnings = 0;
+            
+            // Update UI for each class based on new date
+            const classElements = document.querySelectorAll('.class-card');
+            classElements.forEach(el => {
+                const classId = el.dataset.id;
+                const cls = classes.find(c => c.id === classId);
+                if (cls) {
+                    const stats = calculateClassEarnings(cls, year, month);
+                    
+                    // Update specific class UI
+                    el.querySelector('.session-count').textContent = `${stats.sessions} sessions this month`;
+                    el.querySelector('.class-earnings').textContent = formatCurrency(stats.earnings);
+                    el.querySelector('.absence-count').textContent = `${stats.absences} absences`;
+                    
+                    const makeupCountEl = el.querySelector('.makeup-count');
+                    if(makeupCountEl) {
+                        makeupCountEl.textContent = `${stats.makeups} make-ups`;
+                        if (stats.makeups > 0) makeupCountEl.classList.remove('hidden');
+                        else makeupCountEl.classList.add('hidden');
+                    }
+                    
+                    totalEarnings += stats.earnings;
+                    totalStudents += parseInt(cls.students);
+                }
+            });
+
+            // Update main summary panel
+            totalClassesCount.textContent = classes.length;
+            totalStudentsCount.textContent = totalStudents;
+            totalEarningsAmount.textContent = formatCurrency(totalEarnings);
+            
+            // Show/hide clear all button
+            clearAllBtn.classList.toggle('hidden', classes.length === 0);
+        }
+
+        function renderClassList() {
+            if (classes.length === 0) {
+                emptyState.style.display = 'block';
+                // Clear existing cards but keep empty state
+                Array.from(classList.children).forEach(child => {
+                    if (child.id !== 'emptyState') child.remove();
+                });
+            } else {
+                emptyState.style.display = 'none';
+                
+                // Clear existing cards
+                Array.from(classList.children).forEach(child => {
+                    if (child.id !== 'emptyState') child.remove();
+                });
+
+                const year = selectedDate.getFullYear();
+                const month = selectedDate.getMonth();
+
+                classes.forEach(cls => {
+                    const stats = calculateClassEarnings(cls, year, month);
+                    const scheduleText = cls.schedule.map(d => dayNames[d]).join(', ');
+
+                    const card = document.createElement('div');
+                    card.className = 'class-card bg-white border border-gray-200 rounded-xl p-5 shadow-sm hover:shadow-md transition relative group';
+                    card.dataset.id = cls.id;
+                    
+                    card.innerHTML = `
+                        <div class="flex justify-between items-start mb-3">
+                            <div>
+                                <h3 class="font-bold text-lg text-gray-800">${cls.name}</h3>
+                                <div class="flex items-center gap-4 text-sm text-gray-500 mt-1">
+                                    <span title="Students"><i class="fas fa-users text-blue-400 mr-1"></i> ${cls.students}</span>
+                                    <span title="Fee per student per session"><i class="fas fa-tag text-green-400 mr-1"></i> ${formatCurrency(cls.fee)}</span>
+                                </div>
+                            </div>
+                            <div class="flex gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                                <button class="add-makeup-btn text-gray-400 hover:text-green-500 p-1 mr-2" title="Add Make-up Student">
+                                    <i class="fas fa-user-plus"></i>
+                                </button>
+                                <button class="edit-btn text-gray-400 hover:text-blue-500 p-1" title="Edit">
+                                    <i class="fas fa-edit"></i>
+                                </button>
+                                <button class="delete-btn text-gray-400 hover:text-red-500 p-1" title="Delete">
+                                    <i class="fas fa-trash"></i>
+                                </button>
+                            </div>
+                        </div>
+                        
+                        <div class="bg-gray-50 rounded-lg p-3 mt-3 grid grid-cols-2 gap-4 border border-gray-100">
+                            <div>
+                                <div class="text-xs text-gray-500 uppercase font-semibold mb-1 flex items-center gap-1">
+                                    <i class="far fa-clock"></i> Schedule & Attendance
+                                </div>
+                                <div class="text-sm font-medium text-gray-700 mb-1">${scheduleText}</div>
+                                <div class="flex flex-col gap-1">
+                                    <span class="session-count text-xs text-blue-600 bg-blue-50 inline-block px-2 py-0.5 rounded w-fit">${stats.sessions} sessions this month</span>
+                                    
+                                    <span class="makeup-count text-xs text-green-600 bg-green-50 inline-block px-2 py-0.5 rounded w-fit ${stats.makeups > 0 ? '' : 'hidden'}">${stats.makeups} make-ups</span>
+                                    
+                                    <div class="flex items-center gap-2 mt-1">
+                                        <span class="absence-count text-xs text-red-600 bg-red-50 inline-block px-2 py-0.5 rounded w-fit">${stats.absences} absences</span>
+                                        <button class="add-absence-btn text-xs bg-gray-200 hover:bg-gray-300 text-gray-700 px-2 py-0.5 rounded transition" title="Record an absence">
+                                            -1 Student
+                                        </button>
+                                        <button class="remove-absence-btn text-xs bg-gray-200 hover:bg-gray-300 text-gray-700 px-2 py-0.5 rounded transition hidden" title="Remove an absence">
+                                            +1 Student
+                                        </button>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="text-right flex flex-col justify-end">
+                                <div class="text-xs text-gray-500 uppercase font-semibold mb-1">Monthly Final Fee</div>
+                                <div class="class-earnings text-xl font-bold text-green-600">${formatCurrency(stats.earnings)}</div>
+                            </div>
+                        </div>
+                    `;
+
+                    // Event Listeners for Edit/Delete/Absence/Makeup
+                    const addAbsenceBtn = card.querySelector('.add-absence-btn');
+                    const removeAbsenceBtn = card.querySelector('.remove-absence-btn');
+                    const addMakeupBtn = card.querySelector('.add-makeup-btn');
+
+                    // Show remove absence button if there are absences
+                    if (stats.absences > 0) {
+                        removeAbsenceBtn.classList.remove('hidden');
+                    }
+
+                    addMakeupBtn.addEventListener('click', () => {
+                        makeupClassName.textContent = cls.name;
+                        makeupClassIdInput.value = cls.id;
+                        makeupCountInput.value = 1;
+                        makeupModal.classList.add('active');
+                    });
+
+                    addAbsenceBtn.addEventListener('click', async () => {
+                        if (!cls.absences) cls.absences = [];
+                        
+                        const existingAbsence = cls.absences.find(a => a.year === year && a.month === month);
+                        if (existingAbsence) {
+                            // Ensure we don't exceed total possible student sessions
+                            if (existingAbsence.count < (cls.students * stats.sessions)) {
+                                existingAbsence.count++;
+                            } else {
+                                alert("Cannot add more absences than total student sessions.");
+                                return;
+                            }
+                        } else {
+                            if ((cls.students * stats.sessions) > 0) {
+                                cls.absences.push({ year, month, count: 1 });
+                            } else {
+                                alert("No sessions scheduled for this month to have absences.");
+                                return;
+                            }
+                        }
+                        
+                        await saveClass(cls);
+                    });
+
+                    removeAbsenceBtn.addEventListener('click', async () => {
+                        if (!cls.absences) return;
+                        
+                        const existingAbsenceIndex = cls.absences.findIndex(a => a.year === year && a.month === month);
+                        if (existingAbsenceIndex !== -1) {
+                            cls.absences[existingAbsenceIndex].count--;
+                            if (cls.absences[existingAbsenceIndex].count <= 0) {
+                                cls.absences.splice(existingAbsenceIndex, 1);
+                            }
+                            await saveClass(cls);
+                        }
+                    });
+
+                    card.querySelector('.delete-btn').addEventListener('click', async () => {
+                        // Using custom modal logic implicitly instead of confirm if possible, but keep simple for now
+                        const isConfirmed = confirm(`Are you sure you want to delete ${cls.name}?`);
+                        if(isConfirmed) {
+                            await deleteClass(cls.id);
+                        }
+                    });
+
+                    card.querySelector('.edit-btn').addEventListener('click', () => {
+                        // Populate form
+                        document.getElementById('className').value = cls.name;
+                        document.getElementById('studentCount').value = cls.students;
+                        document.getElementById('feePerSession').value = cls.fee;
+                        
+                        // Reset buttons
+                        dayButtons.forEach(btn => {
+                            btn.classList.remove('bg-blue-500', 'text-white', 'border-blue-500');
+                            btn.classList.add('border-gray-300');
+                            btn.dataset.selected = 'false';
+                        });
+                        
+                        // Select days for this class
+                        cls.schedule.forEach(day => {
+                            const btn = document.querySelector(`.day-btn[data-day="${day}"]`);
+                            if(btn) {
+                                btn.classList.add('bg-blue-500', 'text-white', 'border-blue-500');
+                                btn.classList.remove('border-gray-300');
+                                btn.dataset.selected = 'true';
+                            }
+                        });
+
+                        editingClassId = cls.id;
+                        
+                        // Change submit button text
+                        const submitBtn = classForm.querySelector('button[type="submit"]');
+                        submitBtn.innerHTML = '<i class="fas fa-check"></i> Update Class';
+                        submitBtn.classList.remove('bg-blue-600', 'hover:bg-blue-700');
+                        submitBtn.classList.add('bg-green-600', 'hover:bg-green-700');
+                        
+                        // Scroll to form
+                        classForm.scrollIntoView({ behavior: 'smooth' });
+                    });
+
+                    classList.appendChild(card);
+                });
+            }
+            updateCalculations();
+        }
+
+        // --- STREAMING_CHUNK:Event Listeners & Initialization ---
+
+        // Day Selector Toggle Logic
+        dayButtons.forEach(btn => {
+            btn.dataset.selected = 'false';
+            btn.addEventListener('click', () => {
+                const isSelected = btn.dataset.selected === 'true';
+                if (isSelected) {
+                    btn.classList.remove('bg-blue-500', 'text-white', 'border-blue-500');
+                    btn.classList.add('border-gray-300');
+                    btn.dataset.selected = 'false';
+                } else {
+                    btn.classList.add('bg-blue-500', 'text-white', 'border-blue-500');
+                    btn.classList.remove('border-gray-300');
+                    btn.dataset.selected = 'true';
+                }
+                scheduleError.classList.add('hidden');
+            });
+        });
+
+        // Form Submit Logic
+        classForm.addEventListener('submit', async (e) => {
+            e.preventDefault();
+            
+            const name = document.getElementById('className').value;
+            const students = parseInt(document.getElementById('studentCount').value);
+            const fee = parseFloat(document.getElementById('feePerSession').value);
+            
+            // Gather selected days
+            const schedule = [];
+            dayButtons.forEach(btn => {
+                if (btn.dataset.selected === 'true') {
+                    schedule.push(parseInt(btn.dataset.day));
+                }
+            });
+
+            if (schedule.length === 0) {
+                scheduleError.classList.remove('hidden');
+                return;
+            }
+
+            if (editingClassId) {
+                // Update existing
+                const existingClass = classes.find(c => c.id === editingClassId);
+                const updatedClass = { 
+                    ...existingClass,
+                    name, 
+                    students, 
+                    fee, 
+                    schedule 
+                };
+                
+                await saveClass(updatedClass);
+                editingClassId = null;
+                
+                // Reset submit button
+                const submitBtn = classForm.querySelector('button[type="submit"]');
+                submitBtn.innerHTML = '<i class="fas fa-save"></i> Save Class';
+                submitBtn.classList.remove('bg-green-600', 'hover:bg-green-700');
+                submitBtn.classList.add('bg-blue-600', 'hover:bg-blue-700');
+            } else {
+                // Add new
+                const newClass = {
+                    id: generateId(),
+                    name,
+                    students,
+                    fee,
+                    schedule,
+                    absences: [],
+                    makeups: []
+                };
+                await saveClass(newClass);
+            }
+            
+            // Reset form
+            classForm.reset();
+            dayButtons.forEach(btn => {
+                btn.classList.remove('bg-blue-500', 'text-white', 'border-blue-500');
+                btn.classList.add('border-gray-300');
+                btn.dataset.selected = 'false';
+            });
+            
+            renderClassList();
+            renderCalendar(); // Update dots on calendar
+        });
+
+        // Make-up Form Submit
+        makeupForm.addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const classId = makeupClassIdInput.value;
+            const count = parseInt(makeupCountInput.value);
+            const year = selectedDate.getFullYear();
+            const month = selectedDate.getMonth();
+
+            const cls = classes.find(c => c.id === classId);
+            if (cls) {
+                if (!cls.makeups) cls.makeups = [];
+                
+                const existingMakeup = cls.makeups.find(m => m.year === year && m.month === month);
+                if (existingMakeup) {
+                    existingMakeup.count += count;
+                } else {
+                    cls.makeups.push({ year, month, count });
+                }
+                
+                await saveClass(cls);
+            }
+            
+            makeupModal.classList.remove('active');
+            makeupForm.reset();
+        });
+
+        // Modal Close logic
+        closeModals.forEach(btn => {
+            btn.addEventListener('click', () => {
+                makeupModal.classList.remove('active');
+            });
+        });
+
+        // Close modal on outside click
+        makeupModal.addEventListener('click', (e) => {
+            if (e.target === makeupModal) {
+                makeupModal.classList.remove('active');
+            }
+        });
+
+        clearAllBtn.addEventListener('click', async () => {
+            if(confirm('Are you sure you want to remove all classes? This cannot be undone.')) {
+                // Delete one by one if in Firebase
+                if(db && userId) {
+                     for (const cls of classes) {
+                         await deleteClass(cls.id);
+                     }
+                } else {
+                    classes = [];
+                    localStorage.setItem('teacherClasses', JSON.stringify(classes));
+                    renderClassList();
+                    renderCalendar();
+                }
+            }
+        });
+
+        // Initialize App
+        initAuth(); // Start auth flow first
+        initCalendar();
+        // renderClassList is called after auth state resolves
+
+    </script>
+</body>
+</html>
