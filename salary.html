@@ -657,6 +657,7 @@
                     
                     // Update specific class UI
                     el.querySelector('.session-count').textContent = `${stats.sessions} sessions this month`;
+                    el.querySelector('.base-student-fee').textContent = formatCurrency(stats.sessions * cls.fee);
                     el.querySelector('.class-earnings').textContent = formatCurrency(stats.earnings);
                     el.querySelector('.absence-count').textContent = `${stats.absences} absences`;
                     
@@ -756,8 +757,13 @@
                                     </div>
                                 </div>
                             </div>
-                            <div class="text-right flex flex-col justify-end">
-                                <div class="text-xs text-gray-500 uppercase font-semibold mb-1">Monthly Final Fee</div>
+                            <div class="text-right flex flex-col justify-end border-l border-gray-200 pl-4">
+                                <div class="text-xs text-gray-500 mb-1 flex justify-end items-center gap-1" title="Base fee for one student attending all sessions">
+                                    <i class="fas fa-user text-gray-400"></i> Fee / Student
+                                </div>
+                                <div class="base-student-fee text-sm font-bold text-gray-700 mb-2">${formatCurrency(stats.sessions * cls.fee)}</div>
+                                
+                                <div class="text-xs text-gray-500 uppercase font-semibold mb-1 border-t border-gray-100 pt-2">Total Earning</div>
                                 <div class="class-earnings text-xl font-bold text-green-600">${formatCurrency(stats.earnings)}</div>
                             </div>
                         </div>
