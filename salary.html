@@ -660,11 +660,11 @@
                     el.querySelector('.class-earnings').textContent = formatCurrency(stats.earnings);
                     el.querySelector('.absence-count').textContent = `${stats.absences} absences`;
                     
-                    const makeupCountEl = el.querySelector('.makeup-count');
-                    if(makeupCountEl) {
-                        makeupCountEl.textContent = `${stats.makeups} make-ups`;
-                        if (stats.makeups > 0) makeupCountEl.classList.remove('hidden');
-                        else makeupCountEl.classList.add('hidden');
+                    const makeupWrapperEl = el.querySelector('.makeup-wrapper');
+                    if(makeupWrapperEl) {
+                        el.querySelector('.makeup-count').textContent = `${stats.makeups} make-ups`;
+                        if (stats.makeups > 0) makeupWrapperEl.classList.remove('hidden');
+                        else makeupWrapperEl.classList.add('hidden');
                     }
                     
                     totalEarnings += stats.earnings;
@@ -738,7 +738,12 @@
                                 <div class="flex flex-col gap-1">
                                     <span class="session-count text-xs text-blue-600 bg-blue-50 inline-block px-2 py-0.5 rounded w-fit">${stats.sessions} sessions this month</span>
                                     
-                                    <span class="makeup-count text-xs text-green-600 bg-green-50 inline-block px-2 py-0.5 rounded w-fit ${stats.makeups > 0 ? '' : 'hidden'}">${stats.makeups} make-ups</span>
+                                    <div class="makeup-wrapper flex items-center gap-2 mt-1 ${stats.makeups > 0 ? '' : 'hidden'}">
+                                        <span class="makeup-count text-xs text-green-600 bg-green-50 inline-block px-2 py-0.5 rounded w-fit">${stats.makeups} make-ups</span>
+                                        <button class="remove-makeup-btn text-xs bg-gray-200 hover:bg-gray-300 text-gray-700 px-2 py-0.5 rounded transition" title="Remove a make-up">
+                                            -1 Make-up
+                                        </button>
+                                    </div>
                                     
                                     <div class="flex items-center gap-2 mt-1">
                                         <span class="absence-count text-xs text-red-600 bg-red-50 inline-block px-2 py-0.5 rounded w-fit">${stats.absences} absences</span>
@@ -762,11 +767,25 @@
                     const addAbsenceBtn = card.querySelector('.add-absence-btn');
                     const removeAbsenceBtn = card.querySelector('.remove-absence-btn');
                     const addMakeupBtn = card.querySelector('.add-makeup-btn');
+                    const removeMakeupBtn = card.querySelector('.remove-makeup-btn');
 
                     // Show remove absence button if there are absences
                     if (stats.absences > 0) {
                         removeAbsenceBtn.classList.remove('hidden');
                     }
+
+                    removeMakeupBtn.addEventListener('click', async () => {
+                        if (!cls.makeups) return;
+                        
+                        const existingMakeupIndex = cls.makeups.findIndex(m => m.year === year && m.month === month);
+                        if (existingMakeupIndex !== -1) {
+                            cls.makeups[existingMakeupIndex].count--;
+                            if (cls.makeups[existingMakeupIndex].count <= 0) {
+                                cls.makeups.splice(existingMakeupIndex, 1);
+                            }
+                            try { await saveClass(cls); } catch (e) {}
+                        }
+                    });
 
                     addMakeupBtn.addEventListener('click', () => {
                         makeupClassName.textContent = cls.name;
