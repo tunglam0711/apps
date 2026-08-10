@@ -83,8 +83,16 @@
             </h1>
             <div class="flex flex-col md:flex-row items-center justify-between mt-2">
                 <p class="text-gray-600">Manage your classes, track schedules, and calculate monthly earnings.</p>
-                <div id="authStatus" class="mt-2 md:mt-0 text-sm font-medium px-3 py-1 bg-gray-200 text-gray-700 rounded-full flex items-center gap-2">
-                    <i class="fas fa-circle-notch fa-spin text-gray-500"></i> Connecting...
+                <div class="flex flex-wrap items-center justify-center gap-2 mt-2 md:mt-0">
+                    <div id="authStatus" class="text-sm font-medium px-3 py-1 bg-gray-200 text-gray-700 rounded-full flex items-center gap-2">
+                        <i class="fas fa-circle-notch fa-spin text-gray-500"></i> Connecting...
+                    </div>
+                    <button id="googleLoginBtn" class="hidden text-sm bg-blue-100 hover:bg-blue-200 text-blue-700 px-3 py-1 rounded-full font-medium transition items-center gap-2">
+                        <i class="fab fa-google"></i> Sign In to Sync
+                    </button>
+                    <button id="logoutBtn" class="hidden text-sm bg-gray-100 hover:bg-gray-200 text-gray-600 px-3 py-1 rounded-full font-medium transition">
+                        Logout
+                    </button>
                 </div>
             </div>
         </header>
@@ -191,9 +199,9 @@
                             <div class="text-blue-100 text-xs uppercase tracking-wider mb-1">Total Students</div>
                             <div class="text-3xl font-bold" id="totalStudentsCount">0</div>
                         </div>
-                        <div class="bg-white/20 rounded-lg p-4 backdrop-blur-sm border border-white/30 overflow-hidden flex flex-col justify-center">
+                        <div class="bg-white/20 rounded-lg p-4 backdrop-blur-sm border border-white/30 flex flex-col justify-center">
                             <div class="text-blue-100 text-xs uppercase tracking-wider mb-1">Total Earnings</div>
-                            <div class="text-2xl lg:text-3xl font-bold text-yellow-300 truncate" id="totalEarningsAmount" title="0 ₫">0 ₫</div>
+                            <div class="text-2xl lg:text-3xl font-bold text-yellow-300 break-words break-all" id="totalEarningsAmount">0 ₫</div>
                         </div>
                     </div>
                 </div>
@@ -250,7 +258,7 @@
 
     <script type="module">
         import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
-        import { getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+        import { getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged, signInWithPopup, GoogleAuthProvider, signOut } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
         import { getFirestore, doc, setDoc, getDoc, collection, onSnapshot, deleteDoc } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
 
         // --- Firebase Setup ---
@@ -265,8 +273,7 @@
             appId: "1:1093180479960:web:183c7713666d961f7ebaad",
             measurementId: "G-2XMBGZEG5Q"
         };
-        
-        let app, db, auth;
+        let app, db, auth, googleProvider;
         let userId = null;
         let unsubscribeClasses = null;
 
@@ -274,6 +281,7 @@
             app = initializeApp(firebaseConfig);
             db = getFirestore(app);
             auth = getAuth(app);
+            googleProvider = new GoogleAuthProvider();
         }
 
         // --- State Management ---
@@ -385,32 +393,55 @@
                 return;
             }
 
-            try {
-                // IMPORTANT FIX: Use Custom Token if available so data syncs across all your devices
-                if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
-                    await signInWithCustomToken(auth, __initial_auth_token);
-                } else {
-                    await signInAnonymously(auth);
-                }
-            } catch (error) {
-                console.warn("Firebase Auth not configured yet. Switching to local mode. Error code:", error.code);
-                
-                let errorMsg = "Could not connect to Firebase.";
-                if (error.code === 'auth/configuration-not-found' || error.code === 'auth/admin-restricted-operation') {
-                    errorMsg = "Firebase Setup Required: Please go to Firebase Console > Authentication > Sign-in method > Enable 'Anonymous'.";
-                }
-                
-                useLocalFallback("Local Mode", errorMsg);
-                return;
-            }
+            const googleLoginBtn = document.getElementById('googleLoginBtn');
+            const logoutBtn = document.getElementById('logoutBtn');
 
-            onAuthStateChanged(auth, (user) => {
+            googleLoginBtn.addEventListener('click', async () => {
+                try {
+                    await signInWithPopup(auth, googleProvider);
+                } catch (error) {
+                    showError("Sign in failed: " + error.message);
+                }
+            });
+
+            logoutBtn.addEventListener('click', async () => {
+                await signOut(auth);
+                window.location.reload();
+            });
+
+            onAuthStateChanged(auth, async (user) => {
                 if (user) {
                     userId = user.uid;
-                    document.getElementById('authStatus').innerHTML = `<i class="fas fa-cloud text-blue-500"></i> Saved to Cloud`;
+                    if (user.isAnonymous) {
+                        document.getElementById('authStatus').innerHTML = `<i class="fas fa-laptop text-gray-500"></i> Device Only`;
+                        googleLoginBtn.classList.remove('hidden');
+                        googleLoginBtn.classList.add('flex');
+                        logoutBtn.classList.add('hidden');
+                    } else {
+                        document.getElementById('authStatus').innerHTML = `<i class="fas fa-cloud text-blue-500"></i> Synced to Account`;
+                        googleLoginBtn.classList.add('hidden');
+                        googleLoginBtn.classList.remove('flex');
+                        logoutBtn.classList.remove('hidden');
+                    }
                     setupRealtimeListener();
                 } else {
                     userId = null;
+                    try {
+                        if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
+                            await signInWithCustomToken(auth, __initial_auth_token);
+                        } else {
+                            await signInAnonymously(auth);
+                        }
+                    } catch (error) {
+                        console.warn("Firebase Auth not configured yet. Switching to local mode. Error code:", error.code);
+                        
+                        let errorMsg = "Could not connect to Firebase.";
+                        if (error.code === 'auth/configuration-not-found' || error.code === 'auth/admin-restricted-operation') {
+                            errorMsg = "Firebase Setup Required: Please go to Firebase Console > Authentication > Sign-in method > Enable 'Anonymous' and 'Google'.";
+                        }
+                        
+                        useLocalFallback("Local Mode", errorMsg);
+                    }
                 }
             });
         }
