@@ -191,9 +191,9 @@
                             <div class="text-blue-100 text-xs uppercase tracking-wider mb-1">Total Students</div>
                             <div class="text-3xl font-bold" id="totalStudentsCount">0</div>
                         </div>
-                        <div class="bg-white/20 rounded-lg p-4 backdrop-blur-sm border border-white/30">
+                        <div class="bg-white/20 rounded-lg p-4 backdrop-blur-sm border border-white/30 overflow-hidden flex flex-col justify-center">
                             <div class="text-blue-100 text-xs uppercase tracking-wider mb-1">Total Earnings</div>
-                            <div class="text-3xl font-bold text-yellow-300" id="totalEarningsAmount">0 ₫</div>
+                            <div class="text-2xl lg:text-3xl font-bold text-yellow-300 truncate" id="totalEarningsAmount" title="0 ₫">0 ₫</div>
                         </div>
                     </div>
                 </div>
@@ -281,6 +281,13 @@
         
         let currentDate = new Date();
         let selectedDate = new Date(currentDate.getFullYear(), currentDate.getMonth(), 1); // Default to current month
+        
+        // Restore previously selected month if available
+        const savedDate = localStorage.getItem('teacherSelectedDate');
+        if (savedDate) {
+            selectedDate = new Date(savedDate);
+        }
+
         let editingClassId = null;
 
         // --- DOM Elements ---
@@ -379,7 +386,12 @@
             }
 
             try {
-                await signInAnonymously(auth);
+                // IMPORTANT FIX: Use Custom Token if available so data syncs across all your devices
+                if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
+                    await signInWithCustomToken(auth, __initial_auth_token);
+                } else {
+                    await signInAnonymously(auth);
+                }
             } catch (error) {
                 console.warn("Firebase Auth not configured yet. Switching to local mode. Error code:", error.code);
                 
@@ -413,10 +425,28 @@
             const classesRef = collection(db, 'artifacts', appId, 'users', userId, 'classes');
             
             unsubscribeClasses = onSnapshot(classesRef, (snapshot) => {
+                const localClasses = JSON.parse(localStorage.getItem('teacherClasses')) || [];
+                
+                // If cloud is empty but we have local data, migrate local data to cloud!
+                if (snapshot.empty && localClasses.length > 0) {
+                    console.log("Migrating local data to cloud...");
+                    localClasses.forEach(async (cls) => {
+                        try {
+                            const docRef = doc(db, 'artifacts', appId, 'users', userId, 'classes', cls.id);
+                            await setDoc(docRef, cls);
+                        } catch (e) { console.error("Migration failed", e); }
+                    });
+                    return; // The listener will catch the newly uploaded documents shortly
+                }
+
                 classes = [];
                 snapshot.forEach((doc) => {
                     classes.push({ id: doc.id, ...doc.data() });
                 });
+                
+                // Keep local storage perfectly synced with cloud as a bulletproof backup
+                localStorage.setItem('teacherClasses', JSON.stringify(classes));
+                
                 renderClassList();
                 renderCalendar(); 
             }, (error) => {
@@ -430,6 +460,20 @@
         }
 
         async function saveClass(clsData) {
+            // 1. ALWAYS save locally first (Optimistic Update & Local Backup)
+            const index = classes.findIndex(c => c.id === clsData.id);
+            if (index !== -1) {
+                classes[index] = clsData;
+            } else {
+                classes.push(clsData);
+            }
+            localStorage.setItem('teacherClasses', JSON.stringify(classes));
+            
+            // 2. Update UI instantly so the app feels lightning fast
+            renderClassList();
+            renderCalendar();
+
+            // 3. Try Firebase quietly in the background if active
             if (db && userId) {
                 try {
                     const docRef = doc(db, 'artifacts', appId, 'users', userId, 'classes', clsData.id);
@@ -437,27 +481,24 @@
                 } catch (error) {
                     console.error("Error saving class to Firebase:", error);
                     if (error.code === 'permission-denied') {
-                        showError("<b>Permission Denied!</b><br>Cannot save to Firebase. Please check your Firestore Security Rules in the Firebase Console.");
+                        showError("<b>Cloud Sync Disabled</b><br>Permission Denied. But don't worry, your data was saved locally to your device!");
                     } else {
-                        showError("Failed to save class: " + error.message);
+                        showError("Cloud save failed: " + error.message + "<br>Data saved locally instead.");
                     }
-                    throw error;
                 }
-            } else {
-                // Local fallback
-                const index = classes.findIndex(c => c.id === clsData.id);
-                if (index !== -1) {
-                    classes[index] = clsData;
-                } else {
-                    classes.push(clsData);
-                }
-                localStorage.setItem('teacherClasses', JSON.stringify(classes));
-                renderClassList();
-                renderCalendar();
             }
         }
 
         async function deleteClass(classId) {
+            // 1. ALWAYS delete locally first
+            classes = classes.filter(c => c.id !== classId);
+            localStorage.setItem('teacherClasses', JSON.stringify(classes));
+            
+            // 2. Update UI instantly
+            renderClassList();
+            renderCalendar();
+
+            // 3. Delete from Firebase if active
             if (db && userId) {
                 try {
                     const docRef = doc(db, 'artifacts', appId, 'users', userId, 'classes', classId);
@@ -465,18 +506,9 @@
                 } catch (error) {
                     console.error("Error deleting class from Firebase:", error);
                     if (error.code === 'permission-denied') {
-                        showError("<b>Permission Denied!</b><br>Cannot delete. Please update your Firestore Security Rules.");
-                    } else {
-                        showError("Failed to delete class: " + error.message);
+                        showError("<b>Cloud Sync Disabled</b><br>Permission Denied. Deleted locally only.");
                     }
-                    throw error;
                 }
-            } else {
-                // Local fallback
-                classes = classes.filter(c => c.id !== classId);
-                localStorage.setItem('teacherClasses', JSON.stringify(classes));
-                renderClassList();
-                renderCalendar();
             }
         }
 
@@ -499,6 +531,7 @@
 
             yearSelector.addEventListener('change', (e) => {
                 selectedDate.setFullYear(parseInt(e.target.value));
+                localStorage.setItem('teacherSelectedDate', selectedDate.toISOString());
                 renderCalendar();
                 updateCalculations();
             });
@@ -506,6 +539,7 @@
             prevMonthBtn.addEventListener('click', () => {
                 selectedDate.setMonth(selectedDate.getMonth() - 1);
                 yearSelector.value = selectedDate.getFullYear();
+                localStorage.setItem('teacherSelectedDate', selectedDate.toISOString());
                 renderCalendar();
                 updateCalculations();
             });
@@ -513,6 +547,7 @@
             nextMonthBtn.addEventListener('click', () => {
                 selectedDate.setMonth(selectedDate.getMonth() + 1);
                 yearSelector.value = selectedDate.getFullYear();
+                localStorage.setItem('teacherSelectedDate', selectedDate.toISOString());
                 renderCalendar();
                 updateCalculations();
             });
@@ -677,6 +712,7 @@
             totalClassesCount.textContent = classes.length;
             totalStudentsCount.textContent = totalStudents;
             totalEarningsAmount.textContent = formatCurrency(totalEarnings);
+            totalEarningsAmount.title = formatCurrency(totalEarnings); // Tooltip for very long numbers
             
             // Show/hide clear all button
             clearAllBtn.classList.toggle('hidden', classes.length === 0);
@@ -1022,16 +1058,23 @@
 
         clearAllBtn.addEventListener('click', async () => {
             if(confirm('Are you sure you want to remove all classes? This cannot be undone.')) {
-                // Delete one by one if in Firebase
+                // Delete locally first to clear UI immediately
+                const oldClasses = [...classes];
+                classes = [];
+                localStorage.setItem('teacherClasses', JSON.stringify(classes));
+                renderClassList();
+                renderCalendar();
+                
+                // Delete from Firebase in background
                 if(db && userId) {
-                     for (const cls of classes) {
-                         await deleteClass(cls.id);
+                     for (const cls of oldClasses) {
+                         try {
+                            const docRef = doc(db, 'artifacts', appId, 'users', userId, 'classes', cls.id);
+                            await deleteDoc(docRef);
+                         } catch (e) {
+                            console.warn("Could not delete from cloud", e);
+                         }
                      }
-                } else {
-                    classes = [];
-                    localStorage.setItem('teacherClasses', JSON.stringify(classes));
-                    renderClassList();
-                    renderCalendar();
                 }
             }
         });
