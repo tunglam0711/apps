@@ -400,7 +400,25 @@
                 try {
                     await signInWithPopup(auth, googleProvider);
                 } catch (error) {
-                    showError("Sign in failed: " + error.message);
+                    if (error.code === 'auth/unauthorized-domain') {
+                        const currentDomain = window.location.hostname;
+                        showError(`
+                            <div class="text-left mt-2">
+                                <b class="text-lg">Domain Not Authorized</b><br>
+                                Firebase is blocking Google Sign-In because it doesn't recognize this preview environment.<br><br>
+                                <b>To fix this, go to your Firebase Console:</b>
+                                <ol class="list-decimal pl-5 mt-1 space-y-1">
+                                    <li>Go to <b>Authentication</b> > <b>Settings</b> tab.</li>
+                                    <li>Click <b>Authorized domains</b> on the left menu.</li>
+                                    <li>Click <b>Add domain</b>.</li>
+                                    <li>Copy and paste exactly this:<br> <code class="bg-red-200 px-2 py-1 rounded text-red-900 select-all mt-1 inline-block">${currentDomain}</code></li>
+                                    <li>Click Add, then try signing in here again.</li>
+                                </ol>
+                            </div>
+                        `);
+                    } else {
+                        showError("Sign in failed: " + error.message);
+                    }
                 }
             });
 
@@ -674,13 +692,20 @@
 
         // Calculate sessions and fees for a specific class in the selected month
         function calculateClassEarnings(cls, year, month) {
-            let totalSessions = 0;
+            let totalScheduledSessions = 0;
             
             // For each day in the schedule, count how many times it happens this month
             cls.schedule.forEach(dayIndex => {
-                totalSessions += countDaysInMonth(year, month, dayIndex);
+                totalScheduledSessions += countDaysInMonth(year, month, dayIndex);
             });
             
+            // Calculate canceled sessions for the entire class this month
+            const canceled = (cls.canceled || []).filter(c => c.year === year && c.month === month);
+            const totalCanceledSessions = canceled.reduce((sum, c) => sum + c.count, 0);
+            
+            // Calculate active sessions (Scheduled minus Canceled)
+            const actualSessions = Math.max(0, totalScheduledSessions - totalCanceledSessions);
+
             // Calculate absences for this class in this month
             const classAbsences = (cls.absences || []).filter(a => a.year === year && a.month === month);
             const totalAbsentStudents = classAbsences.reduce((sum, a) => sum + a.count, 0);
@@ -689,18 +714,22 @@
             const makeups = (cls.makeups || []).filter(m => m.year === year && m.month === month);
             const totalMakeupStudents = makeups.reduce((sum, m) => sum + m.count, 0);
 
-            // Total fee = (Fee per student per session) * (number of students * total sessions - absences + makeups)
-            const totalExpectedStudentSessions = cls.students * totalSessions;
+            // Total expected student attendance based on actual un-canceled sessions
+            const totalExpectedStudentSessions = cls.students * actualSessions;
+            
+            // Subtract absences from expected attendance
             const actualStudentSessions = Math.max(0, totalExpectedStudentSessions - totalAbsentStudents);
             
             // Earnings logic: Add makeup fees to the actual sessions calculated
             const totalMonthlyEarnings = cls.fee * (actualStudentSessions + totalMakeupStudents);
             
             return {
-                sessions: totalSessions,
+                scheduled: totalScheduledSessions,
+                sessions: actualSessions,
                 earnings: totalMonthlyEarnings,
                 absences: totalAbsentStudents,
-                makeups: totalMakeupStudents
+                makeups: totalMakeupStudents,
+                canceled: totalCanceledSessions
             };
         }
 
@@ -722,11 +751,18 @@
                     const stats = calculateClassEarnings(cls, year, month);
                     
                     // Update specific class UI
-                    el.querySelector('.session-count').textContent = `${stats.sessions} sessions this month`;
+                    el.querySelector('.session-count').textContent = `${stats.sessions} active sessions`;
                     el.querySelector('.base-student-fee').textContent = formatCurrency(stats.sessions * cls.fee);
                     el.querySelector('.class-earnings').textContent = formatCurrency(stats.earnings);
                     el.querySelector('.absence-count').textContent = `${stats.absences} absences`;
                     
+                    const canceledWrapperEl = el.querySelector('.canceled-wrapper');
+                    if(canceledWrapperEl) {
+                        el.querySelector('.canceled-count').textContent = `${stats.canceled} canceled`;
+                        if (stats.canceled > 0) canceledWrapperEl.classList.remove('hidden');
+                        else canceledWrapperEl.classList.add('hidden');
+                    }
+
                     const makeupWrapperEl = el.querySelector('.makeup-wrapper');
                     if(makeupWrapperEl) {
                         el.querySelector('.makeup-count').textContent = `${stats.makeups} make-ups`;
@@ -804,7 +840,19 @@
                                 </div>
                                 <div class="text-sm font-medium text-gray-700 mb-1">${scheduleText}</div>
                                 <div class="flex flex-col gap-1">
-                                    <span class="session-count text-xs text-blue-600 bg-blue-50 inline-block px-2 py-0.5 rounded w-fit">${stats.sessions} sessions this month</span>
+                                    <div class="flex items-center gap-2">
+                                        <span class="session-count text-xs text-blue-600 bg-blue-50 inline-block px-2 py-0.5 rounded w-fit">${stats.sessions} active sessions</span>
+                                        <button class="add-canceled-btn text-xs bg-gray-200 hover:bg-gray-300 text-gray-700 px-2 py-0.5 rounded transition" title="Cancel a session for the entire class">
+                                            -1 Class
+                                        </button>
+                                    </div>
+                                    
+                                    <div class="canceled-wrapper flex items-center gap-2 mt-1 ${stats.canceled > 0 ? '' : 'hidden'}">
+                                        <span class="canceled-count text-xs text-orange-600 bg-orange-50 inline-block px-2 py-0.5 rounded w-fit">${stats.canceled} canceled</span>
+                                        <button class="remove-canceled-btn text-xs bg-gray-200 hover:bg-gray-300 text-gray-700 px-2 py-0.5 rounded transition" title="Undo class cancellation">
+                                            +1 Class
+                                        </button>
+                                    </div>
                                     
                                     <div class="makeup-wrapper flex items-center gap-2 mt-1 ${stats.makeups > 0 ? '' : 'hidden'}">
                                         <span class="makeup-count text-xs text-green-600 bg-green-50 inline-block px-2 py-0.5 rounded w-fit">${stats.makeups} make-ups</span>
@@ -836,16 +884,53 @@
                         </div>
                     `;
 
-                    // Event Listeners for Edit/Delete/Absence/Makeup
+                    // Event Listeners for Edit/Delete/Absence/Makeup/Canceled
                     const addAbsenceBtn = card.querySelector('.add-absence-btn');
                     const removeAbsenceBtn = card.querySelector('.remove-absence-btn');
                     const addMakeupBtn = card.querySelector('.add-makeup-btn');
                     const removeMakeupBtn = card.querySelector('.remove-makeup-btn');
+                    const addCanceledBtn = card.querySelector('.add-canceled-btn');
+                    const removeCanceledBtn = card.querySelector('.remove-canceled-btn');
 
                     // Show remove absence button if there are absences
                     if (stats.absences > 0) {
                         removeAbsenceBtn.classList.remove('hidden');
                     }
+                    
+                    addCanceledBtn.addEventListener('click', async () => {
+                        if (!cls.canceled) cls.canceled = [];
+                        
+                        const existingCanceled = cls.canceled.find(c => c.year === year && c.month === month);
+                        if (existingCanceled) {
+                            if (existingCanceled.count < stats.scheduled) {
+                                existingCanceled.count++;
+                            } else {
+                                alert("Cannot cancel more sessions than initially scheduled.");
+                                return;
+                            }
+                        } else {
+                            if (stats.scheduled > 0) {
+                                cls.canceled.push({ year, month, count: 1 });
+                            } else {
+                                alert("No sessions scheduled for this month to cancel.");
+                                return;
+                            }
+                        }
+                        try { await saveClass(cls); } catch (e) {}
+                    });
+
+                    removeCanceledBtn.addEventListener('click', async () => {
+                        if (!cls.canceled) return;
+                        
+                        const existingIndex = cls.canceled.findIndex(c => c.year === year && c.month === month);
+                        if (existingIndex !== -1) {
+                            cls.canceled[existingIndex].count--;
+                            if (cls.canceled[existingIndex].count <= 0) {
+                                cls.canceled.splice(existingIndex, 1);
+                            }
+                            try { await saveClass(cls); } catch (e) {}
+                        }
+                    });
 
                     removeMakeupBtn.addEventListener('click', async () => {
                         if (!cls.makeups) return;
@@ -1023,7 +1108,8 @@
                         fee,
                         schedule,
                         absences: [],
-                        makeups: []
+                        makeups: [],
+                        canceled: []
                     };
                     await saveClass(newClass);
                 }
