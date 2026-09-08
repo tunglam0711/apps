@@ -786,6 +786,9 @@
         }
 
         function renderClassList() {
+            // Save current scroll position before re-rendering
+            const currentScrollPos = classList.scrollTop;
+
             if (classes.length === 0) {
                 emptyState.style.display = 'block';
                 // Clear existing cards but keep empty state
@@ -1036,6 +1039,11 @@
                 });
             }
             updateCalculations();
+            
+            // Restore the scroll position so the user doesn't lose their place
+            requestAnimationFrame(() => {
+                classList.scrollTop = currentScrollPos;
+            });
         }
 
         // --- STREAMING_CHUNK:Event Listeners & Initialization ---
